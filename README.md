@@ -4,12 +4,12 @@ Application de bureau (Windows) hors ligne, sans compte ni cloud. Données local
 Pile : Electron · React · TypeScript · Vite · Dexie · KaTeX · marked + DOMPurify · fflate · Vitest.
 
 ## Utiliser
-Voir `docs/GUIDE_INSTALLATION.md` puis `docs/GUIDE_UTILISATION.md`.
+Voir `docs/GUIDE_INSTALLATION.md` (PC), `docs/GUIDE_IPHONE_GITHUB.md` (iPhone), `docs/SYNCHRONISATION_WIFI.md`, puis `docs/GUIDE_UTILISATION.md`.
 
 ## Développer
 ```
 npm install
-npm test            # 50 tests automatisés
+npm test            # 62 tests automatisés
 npm run dev         # interface seule dans le navigateur
 npm start           # build + application Electron
 npm run dist        # paquet Windows (zip) dans release/

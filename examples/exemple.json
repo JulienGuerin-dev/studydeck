@@ -1,0 +1,16 @@
+{
+  "format": "studydeck",
+  "version": 1,
+  "name": "Exemple simple (sans image)",
+  "folders": [
+    {
+      "name": "Informatique",
+      "cards": [
+        {
+          "front": "Écrire une fonction Python qui renvoie le carré de $n$.",
+          "back": "```python\ndef carre(n):\n    return n * n\n```"
+        }
+      ]
+    }
+  ]
+}

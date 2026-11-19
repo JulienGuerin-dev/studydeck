@@ -1,7 +1,7 @@
 {
   "name": "studydeck",
   "productName": "StudyDeck",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Flashcards personnelles avec répétition espacée (hors ligne, sans cloud)",
   "author": "StudyDeck",
   "private": true,
@@ -9,7 +9,7 @@
   "main": "electron/main.cjs",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "build": "tsc --noEmit && vite build && node scripts/make-sw.mjs",
     "test": "vitest run",
     "electron": "electron .",
     "start": "npm run build && electron .",
@@ -52,13 +52,16 @@
     "dexie-react-hooks": "^4.4.0",
     "dompurify": "^3.4.18",
     "fflate": "^0.8.3",
+    "jsqr": "^1.4.0",
     "katex": "^0.19.1",
     "marked": "^18.2.1",
+    "qrcode": "^1.5.4",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.3.0",
