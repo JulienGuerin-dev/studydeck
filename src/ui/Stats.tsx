@@ -1,8 +1,15 @@
 import { useMemo, useState } from 'react'
-import { reviewsPerDay, type Agg } from '../stats/stats'
+import { levelStats, reviewsPerDay, type Agg, type Verdict } from '../stats/stats'
+import { levelDelayLabel } from '../review/levels'
 import type { Folder } from '../db/types'
 import { useLibrary } from './store'
 
+const VERDICT: Record<Verdict, { label: string; cls: string }> = {
+  insufficient: { label: 'Pas assez de données', cls: '' },
+  'too-long': { label: 'Délai peut-être trop long', cls: 'bad' },
+  ok: { label: 'Bien réglé', cls: 'ok' },
+  'could-extend': { label: 'Peut être espacé', cls: 'warn' },
+}
 const pct = (x: number | null) => (x === null ? '—' : `${Math.round(x * 100)} %`)
 const share = (a: number, b: number) => (b ? Math.round((a / b) * 100) : 0)
 const dur = (a: number, b: number | null) => {
@@ -27,6 +34,7 @@ export function Stats() {
   const g = lib.stats.global
   const days = useMemo(() => reviewsPerDay(lib.events, 30, Date.now()), [lib.events])
   const maxDay = Math.max(1, ...days.map((d) => d.total))
+  const ls = useMemo(() => levelStats(lib.folders, lib.cards, lib.events), [lib.folders, lib.cards, lib.events])
 
   const rows: { f: Folder; depth: number }[] = []
   const walk = (p: string | null, depth: number) => {
@@ -45,7 +53,7 @@ export function Stats() {
         <div><b>{g.cards}</b><span>cartes</span></div>
         <div><b>{g.reviewed}</b><span>déjà révisées</span></div>
         <div><b className="warnc">{g.due}</b><span>à réviser</span></div>
-        <div><b className="okc">{g.mastered}</b><span>maîtrisées</span></div>
+        <div><b className="okc">{g.mastered}</b><span>terminées</span></div>
         <div><b className="badc">{g.difficult}</b><span>en difficulté</span></div>
         <div><b>{pct(g.rate)}</b><span>réussite ({g.attempts} tentatives)</span></div>
       </div>
@@ -72,7 +80,7 @@ export function Stats() {
       <h2>Par matière et dossier</h2>
       <div className="box nopad">
         <table className="grid">
-          <thead><tr><th>Nom</th><th>Cartes</th><th>Progression</th><th>À réviser</th><th>Maîtrisées</th><th>Difficiles</th><th>Tentatives</th><th>Réussite</th></tr></thead>
+          <thead><tr><th>Nom</th><th>Cartes</th><th>Progression</th><th>À réviser</th><th>Terminées</th><th>Difficiles</th><th>Tentatives</th><th>Réussite</th></tr></thead>
           <tbody>
             {rows.length === 0 && <tr><td colSpan={8} className="muted">Aucune donnée.</td></tr>}
             {rows.map(({ f, depth }) => {
@@ -92,7 +100,26 @@ export function Stats() {
           </tbody>
         </table>
       </div>
-      <p className="muted small">Maîtrisée : 3 dernières présentations correctes et intervalle d'au moins 21 jours. Difficile : au moins 3 tentatives et moins de 60 % de réussite. Les chiffres d'un dossier incluent ses sous-dossiers.</p>
+      <p className="muted small">Terminée : les 6 étapes sont réussies (ou matière archivée). Difficile : au moins 3 tentatives et moins de 60 % de réussite. Les chiffres d'un dossier incluent ses sous-dossiers ; les matières en « Loisir » ne sont pas notées.</p>
+
+      <h2>Étapes de mémorisation</h2>
+      <div className="box nopad">
+        <table className="grid">
+          <thead><tr><th>Étape</th><th>Délai avant</th><th>Cartes ici</th><th>Révisions</th><th>Réussites</th><th>Taux</th><th>Essais moyens</th><th>Retard moyen</th><th>Bilan</th></tr></thead>
+          <tbody>
+            {ls.rows.map((r) => (
+              <tr key={r.level}>
+                <td><strong>{r.level}</strong></td><td>{r.level === 1 ? 'création' : levelDelayLabel(r.level)}</td><td>{r.cardsHere}</td>
+                <td>{r.attempts}</td><td>{r.successes}</td><td>{pct(r.rate)}</td>
+                <td>{r.avgTries === null ? '—' : r.avgTries.toFixed(1)}</td><td>{r.avgLateDays === null ? '—' : `${r.avgLateDays.toFixed(1)} j`}</td>
+                <td><span className={`tag ${VERDICT[r.verdict].cls}`}>{VERDICT[r.verdict].label}</span></td>
+              </tr>
+            ))}
+            <tr><td><strong>✔</strong></td><td colSpan={8}>{ls.graduated} carte(s) terminée(s) sur {ls.totalLearning} en apprentissage</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p className="muted small">Taux de réussite visé par étape : entre 75 % et 92 %. En dessous, le délai avant cette étape est peut-être trop long ; au-dessus, il pourrait être allongé. Le bilan n'apparaît qu'à partir de 15 révisions à l'étape. « Essais moyens » : nombre de révisions nécessaires pour réussir l'étape. Seules les réponses données quand la carte était due comptent.</p>
 
       <h2>Historique des sessions</h2>
       <div className="box nopad">

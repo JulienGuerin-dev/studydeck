@@ -232,3 +232,20 @@ export function infoFromSdp(sdp: string, role: Role): PairInfo {
   found.sort((a, b) => a.score - b.score)
   return { role, ufrag, pwd, fingerprint, candidates: found.slice(0, 3).map(({ score: _s, ...c }) => c) }
 }
+
+/* ------------------------------- Messages (copier / coller) ------------------------------- */
+
+/** Texte à envoyer par messagerie : le code reste facile à retrouver au milieu d'un message. */
+export function shareText(code: string): string {
+  return `StudyDeck : ${formatCode(code)}`
+}
+
+/**
+ * Retrouve le code dans un texte collé (message complet, retours à la ligne, texte autour).
+ * Un code est une suite de groupes de 4 caractères séparés par des tirets ; on prend la suite la plus longue.
+ */
+export function extractCode(text: string): string {
+  const runs = text.match(/(?:[0-9A-Za-z]{1,4}-\s*){10,}[0-9A-Za-z]{1,4}/g)
+  if (!runs) return text
+  return runs.sort((a, b) => b.length - a.length)[0]
+}

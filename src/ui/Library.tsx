@@ -12,16 +12,23 @@ import { Modal, confirmAsk, folderAsk, promptAsk, toast } from './dialogs'
 import { plainPreview } from './markdown'
 import { Rich } from './Rich'
 import { useLibrary, pathOf, FolderSelect, type Library as Lib } from './store'
+import { LEVELS, levelName } from '../review/levels'
+import { KIND_LABEL, kindOf, setCardLevel } from '../domain/subjects'
+import type { SubjectKind } from '../db/types'
+import { StyleEditor, askChangeKind } from './StyleEditor'
 
 const fmtDate = (t: number | null) => (t ? new Date(t).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' }) : '—')
 const pct = (x: number | null) => (x === null ? '—' : `${Math.round(x * 100)} %`)
 
 function statusOf(s?: CardStats): { label: string; cls: string } {
-  if (!s || !s.reviewed) return { label: 'Nouvelle', cls: 'tag' }
-  if (s.mastered) return { label: 'Maîtrisée', cls: 'tag ok' }
-  if (s.difficult) return { label: 'Difficile', cls: 'tag bad' }
-  if (s.due) return { label: 'À réviser', cls: 'tag warn' }
-  return { label: 'Planifiée', cls: 'tag' }
+  if (!s) return { label: '', cls: 'tag' }
+  if (s.kind === 'hobbit') return { label: 'Loisir', cls: 'tag' }
+  if (s.kind === 'archive') return { label: 'Archivée', cls: 'tag ok' }
+  if (s.graduated) return { label: 'Terminée', cls: 'tag ok' }
+  if (!s.reviewed) return { label: 'Nouvelle', cls: 'tag' }
+  if (s.difficult) return { label: `Étape ${s.level} · difficile`, cls: 'tag bad' }
+  if (s.due) return { label: `À réviser · étape ${s.level}`, cls: 'tag warn' }
+  return { label: `Étape ${s.level}`, cls: 'tag' }
 }
 
 export function Library({ onReview }: { onReview: (scope: string | null) => void }) {
@@ -34,6 +41,8 @@ export function Library({ onReview }: { onReview: (scope: string | null) => void
   const [filter, setFilter] = useState<'all' | 'due' | 'difficult' | 'new'>('all')
   const [subject, setSubject] = useState<string | null>(null)
   const [recursive, setRecursive] = useState(true)
+  const [styling, setStyling] = useState<Folder | null>(null)
+  const [showArchives, setShowArchives] = useState(false)
 
   const sel = selected ? lib.byId.get(selected) : undefined
   const searching = query.trim().length > 0 || filter !== 'all' || subject !== null
@@ -119,10 +128,18 @@ export function Library({ onReview }: { onReview: (scope: string | null) => void
         </div>
         {lib.children(null).length === 0 && <p className="muted pad">Aucune matière pour l'instant.</p>}
         <ul>
-          {lib.children(null).map((f) => (
+          {lib.children(null).filter((f) => kindOf(f) !== 'archive').map((f) => (
             <TreeNode key={f.id} f={f} lib={lib} depth={0} open={open} toggle={toggle} selected={selected} onSelect={select} />
           ))}
         </ul>
+        {lib.children(null).some((f) => kindOf(f) === 'archive') && (
+          <div className="archives">
+            <button className="link" onClick={() => setShowArchives((v) => !v)}>{showArchives ? '▾' : '▸'} Archives ({lib.children(null).filter((f) => kindOf(f) === 'archive').length})</button>
+            {showArchives && <ul>{lib.children(null).filter((f) => kindOf(f) === 'archive').map((f) => (
+              <TreeNode key={f.id} f={f} lib={lib} depth={0} open={open} toggle={toggle} selected={selected} onSelect={select} />
+            ))}</ul>}
+          </div>
+        )}
       </aside>
 
       <section className="panel">
@@ -157,7 +174,14 @@ export function Library({ onReview }: { onReview: (scope: string | null) => void
               ))}
             </nav>
             <div className="folder-head">
-              <h1>{sel.name}</h1>
+              <h1>{sel.emoji && <span className="h-emoji">{sel.emoji}</span>}{sel.name}</h1>
+              {sel.parentId === null && (
+                <label className="inline-select"><span className="muted small">Type :</span>
+                  <select value={kindOf(sel)} onChange={(e) => void askChangeKind(sel, e.target.value as SubjectKind)}>
+                    {(Object.keys(KIND_LABEL) as SubjectKind[]).map((k) => <option key={k} value={k}>{KIND_LABEL[k]}</option>)}
+                  </select>
+                </label>
+              )}
               <div className="muted">
                 {lib.stats.byFolder.get(sel.id)?.cards ?? 0} carte(s) · {lib.stats.byFolder.get(sel.id)?.due ?? 0} à réviser · {pct(lib.stats.byFolder.get(sel.id)?.rate ?? null)} de réussite
               </div>
@@ -167,6 +191,7 @@ export function Library({ onReview }: { onReview: (scope: string | null) => void
               <button onClick={() => newFolder(sel)}>+ Sous-dossier</button>
               <button onClick={() => onReview(sel.id)} disabled={!(lib.stats.byFolder.get(sel.id)?.cards)}>Réviser</button>
               <button onClick={() => rename(sel)}>Renommer</button>
+              <button onClick={() => setStyling(sel)}>Personnaliser</button>
               <button onClick={() => move(sel)}>Déplacer</button>
               <button onClick={() => exportFolder(sel)}>Exporter</button>
               <button className="danger-outline" onClick={() => remove(sel)}>Supprimer</button>
@@ -186,6 +211,7 @@ export function Library({ onReview }: { onReview: (scope: string | null) => void
         )}
       </section>
 
+      {styling && <StyleEditor folder={styling} onClose={() => setStyling(null)} />}
       {editor && <CardEditor cardId={editor.cardId} folderId={editor.folderId} onClose={() => setEditor(null)} />}
       {viewing && <CardView cardId={viewing} onClose={() => setViewing(null)} onEdit={(id) => { setViewing(null); setEditor({ cardId: id }) }} />}
     </div>
@@ -209,7 +235,7 @@ function TreeNode({ f, lib, depth, open, toggle, selected, onSelect }: {
     <li>
       <div className={`node ${selected === f.id ? 'sel' : ''}`} style={{ paddingLeft: 8 + depth * 14 }}>
         <button className="caret" aria-label={isOpen ? 'Replier' : 'Déplier'} onClick={() => toggle(f.id)} disabled={!kids.length}>{kids.length ? (isOpen ? '▾' : '▸') : ''}</button>
-        <button className="name" onClick={() => onSelect(f.id)}>{f.name}</button>
+        <button className="name" onClick={() => onSelect(f.id)}>{f.emoji && <span className="t-emoji">{f.emoji}</span>}{f.name}{depth === 0 && kindOf(f) === 'hobbit' && <span className="tag mini">loisir</span>}</button>
         <span className="count">{lib.stats.byFolder.get(f.id)?.cards ?? 0}</span>
       </div>
       {isOpen && kids.length > 0 && depth < 60 && (
@@ -278,8 +304,14 @@ export function CardView({ cardId, onClose, onEdit }: { cardId: string; onClose:
         <dt>Tentatives</dt><dd>{s?.attempts ?? 0} ({s?.correct ?? 0} réussies, {s?.incorrect ?? 0} échecs, {s?.retries ?? 0} répétitions immédiates)</dd>
         <dt>Taux de réussite</dt><dd>{pct(s?.rate ?? null)}</dd>
         <dt>Dernière révision</dt><dd>{fmtDate(s?.lastReviewAt ?? null)}</dd>
-        <dt>Prochaine révision</dt><dd>{s?.nextReviewAt ? fmtDate(s.nextReviewAt) : 'Dès maintenant (jamais révisée)'}</dd>
-        <dt>Intervalle / facilité</dt><dd>{s?.reviewed ? `${s.interval} jour(s) · facilité ${s.ef?.toFixed(2)}` : '—'}</dd>
+        <dt>Prochaine révision</dt><dd>{s?.kind !== 'learning' ? '—' : s.graduated ? 'Aucune (terminée)' : s.reviewed ? fmtDate(s.nextReviewAt) : 'Dès maintenant (jamais révisée)'}</dd>
+        <dt>Étape d'apprentissage</dt>
+        <dd>{s?.kind === 'learning'
+          ? <span className="inline-level">{s.graduated ? 'Terminée (6/6 réussies)' : levelName(s.level)}
+              <select value={s.graduated ? 6 : s.level} aria-label="Modifier l'étape" onChange={async (e) => { await setCardLevel(c.id, Number(e.target.value)); toast('Étape modifiée') }}>
+                {Array.from({ length: LEVELS }, (_, i) => i + 1).map((l) => <option key={l} value={l}>Étape {l}</option>)}
+              </select></span>
+          : <span className="muted">Matière en {KIND_LABEL[s?.kind ?? 'hobbit'].toLowerCase()} : pas de suivi par étapes.</span>}</dd>
         <dt>Résultats successifs</dt>
         <dd>{s?.results.length ? <span className="dots">{s.results.map((r, i) => <i key={i} className={r ? 'ok' : 'bad'} title={r ? 'Correct' : 'Incorrect'} />)}</span> : '—'}</dd>
       </dl>

@@ -63,3 +63,15 @@ describe('Codec d\'appairage', () => {
     expect(info.fingerprint).toBe(fp)
   })
 })
+
+import { extractCode, shareText } from '../src/sync/pairing'
+describe('Copier / coller', () => {
+  it('retrouve le code au milieu d\'un message, même coupé par des retours à la ligne', () => {
+    const code = encodePairing(base)
+    const msg = `Salut ! ${shareText(code)} merci, à tout à l'heure`
+    expect(decodePairing(extractCode(msg)).ok).toBe(true)
+    const wrapped = shareText(code).replace(/-/g, (m, i) => (i % 5 === 0 ? '-\n' : m))
+    expect(decodePairing(extractCode('Code ' + wrapped)).ok).toBe(true)
+    expect(decodePairing(extractCode(code)).ok).toBe(true) // sans tirets : repli sur le texte entier
+  })
+})

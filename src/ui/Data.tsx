@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { db } from '../db/db'
+import { db, getMeta, setMeta } from '../db/db'
 import type { Card, Folder, SyncConflict } from '../db/types'
 import { checkIntegrity, repairIntegrity, type IntegrityIssue } from '../domain/integrity'
 import { AI_PROMPT, EXAMPLE_DECK } from '../exchange/aiPrompt'
@@ -263,6 +263,21 @@ function SyncPanel() {
   const [errors, setErrors] = useState<string[]>([])
   const [done, setDone] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [email, setEmail] = useState('')
+  useEffect(() => { void getMeta<string>('syncEmail').then((v) => setEmail(v ?? '')) }, [])
+
+  /** Mode « e-mail » : enregistre le fichier puis ouvre un brouillon adressé à l'adresse mémorisée. */
+  const exportAndMail = async () => {
+    await setMeta('syncEmail', email.trim())
+    const f = await exportSyncFile()
+    const p = await saveFile(f.name, f.bytes, 'Fichier de synchronisation', 'studysync')
+    if (!p) return
+    if (isDesktop()) {
+      const body = `Fichier de synchronisation StudyDeck.\n\nJoignez le fichier enregistré ici : ${p}`
+      window.open(`mailto:${encodeURIComponent(email.trim())}?subject=${encodeURIComponent('Synchronisation StudyDeck')}&body=${encodeURIComponent(body)}`)
+      toast('Brouillon ouvert : joignez le fichier enregistré, puis envoyez.')
+    } else toast('Choisissez « Mail » dans la feuille de partage' + (email.trim() ? ` et envoyez à ${email.trim()}` : ''))
+  }
 
   const exportFile = async () => {
     const f = await exportSyncFile()
@@ -309,6 +324,11 @@ function SyncPanel() {
           <li>Sur B, créez à son tour votre fichier de synchronisation et importez-le sur A pour terminer l'échange.</li>
         </ol>
         <div className="actions"><button className="primary" onClick={exportFile}>Créer mon fichier de synchronisation…</button><button onClick={importFile}>Importer le fichier de l'autre appareil…</button></div>
+        <details className="help"><summary>Préparer l'envoi par e-mail</summary>
+          <p className="muted small">Un logiciel ne peut pas envoyer seul un fichier en pièce jointe sans stocker le mot de passe de votre messagerie, et le fichier contient toute votre bibliothèque (non chiffrée par e-mail). StudyDeck prépare donc le message : il enregistre le fichier et ouvre un brouillon adressé à l'adresse ci-dessous ; vous n'avez plus qu'à joindre le fichier et envoyer. Sur iPhone, la feuille de partage propose « Mail » avec le fichier déjà joint.</p>
+          <label className="field"><span>Adresse e-mail de destination (facultatif)</span><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} onBlur={() => void setMeta('syncEmail', email.trim())} placeholder="mon.adresse@exemple.fr" /></label>
+          <div className="actions"><button onClick={exportAndMail}>Créer le fichier et préparer l'e-mail…</button></div>
+        </details>
         <p className="muted small">Ce mode utilise exactement le même moteur que la synchronisation Wi-Fi ; il sert si les deux appareils ne peuvent pas communiquer directement.</p>
         {errors.length > 0 && <div className="alert err">{errors.map((e, i) => <div key={i}>{e}</div>)}</div>}
         {done && <div className="alert ok">{done}<div className="actions"><button onClick={exportFile}>Créer ma réponse pour l'autre appareil…</button></div></div>}

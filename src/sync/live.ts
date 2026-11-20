@@ -25,8 +25,9 @@ export function swapResolutions(r: Resolutions): Resolutions {
 }
 
 async function hello(wire: Wire): Promise<{ id: string; name: string }> {
-  wire.sendJson({ t: 'hello', v: 1, id: await deviceId(), name: await selfName() })
+  wire.sendJson({ t: 'hello', v: 2, id: await deviceId(), name: await selfName() })
   const h = await wire.nextJson('hello', 15_000)
+  if (h.v !== 2) throw new Error('L\'autre appareil utilise une version différente de StudyDeck. Mettez à jour les deux appareils avant de synchroniser.')
   return { id: String(h.id), name: String(h.name) }
 }
 

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import QRCode from 'qrcode'
 import { createBackup } from '../exchange/backup'
 import { autoBackup } from '../platform/files'
-import { decodePairing, DECODE_MESSAGES, formatCode, normalizeCode } from '../sync/pairing'
+import { decodePairing, DECODE_MESSAGES, extractCode, formatCode, normalizeCode, shareText } from '../sync/pairing'
 import { describePath, joinHost, startHost, type GuestHandle, type HostHandle } from '../sync/rtc'
 import { runSession, type LiveUi, type Mode, type Resolutions } from '../sync/live'
 import { Wire } from '../sync/wire'
@@ -13,6 +13,24 @@ import { toast } from './dialogs'
 
 type Phase = 'idle' | 'host-code' | 'guest-input' | 'guest-code' | 'linking' | 'running' | 'review' | 'done' | 'error'
 const stamp = () => new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')
+
+async function copyText(text: string) {
+  try { await navigator.clipboard.writeText(text) } catch {
+    const ta = document.createElement('textarea')
+    ta.value = text; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove()
+  }
+  toast('Code copié : collez-le dans une messagerie')
+}
+
+function CodeActions({ code }: { code: string }) {
+  const canShare = typeof navigator.share === 'function'
+  return (
+    <div className="actions">
+      <button className="primary" onClick={() => copyText(shareText(code))}>Copier le code</button>
+      {canShare && <button onClick={() => navigator.share({ text: shareText(code) }).catch(() => undefined)}>Partager…</button>}
+    </div>
+  )
+}
 
 function CodeBlock({ code }: { code: string }) {
   const groups = formatCode(code).split('-')
@@ -34,6 +52,8 @@ export function WifiSync() {
   const [result, setResult] = useState('')
   const [error, setError] = useState('')
   const [path, setPath] = useState('')
+  const [deadline, setDeadline] = useState(0)
+  const [tick, setTick] = useState(0)
 
   const hostRef = useRef<HostHandle | null>(null)
   const guestRef = useRef<GuestHandle | null>(null)
@@ -50,6 +70,11 @@ export function WifiSync() {
     busy.current = false
   }
   useEffect(() => cleanup, [])
+  useEffect(() => {
+    if (phase !== 'guest-code') return
+    const t = setInterval(() => setTick((x) => x + 1), 1000)
+    return () => clearInterval(t)
+  }, [phase])
   const reset = () => { cleanup(); setPhase('idle'); setCode(''); setQr(''); setTyped(''); setScan(false); setScanError(''); setPlan(null); setChoice({}); setResult(''); setError(''); setStatus(''); setPath('') }
   const fail = (e: unknown) => { cleanup(); setError((e as Error).message || String(e)); setPhase('error') }
 
@@ -85,11 +110,12 @@ export function WifiSync() {
   }
   const onAnswerTyped = (text: string) => {
     setTyped(text)
-    const r = decodePairing(text)
+    const code = extractCode(text)
+    const r = decodePairing(code)
     if (r.ok && r.info.role === 'answer' && hostRef.current && !busy.current) {
       busy.current = true
       setPhase('linking'); setStatus('Connexion en cours…')
-      hostRef.current.accept(text).then(({ channel, pc }) => launch(new Wire(channel), pc, 'host')).catch(fail)
+      hostRef.current.accept(code).then(({ channel, pc }) => launch(new Wire(channel), pc, 'host')).catch(fail)
     }
   }
 
@@ -103,18 +129,37 @@ export function WifiSync() {
       guestRef.current = g
       setCode(g.code); setScan(false)
       releaseCam.current?.(); releaseCam.current = null // la caméra n'est plus nécessaire
-      setPhase('guest-code')
+      setDeadline(Date.now() + 180_000); setPhase('guest-code')
       const { channel, pc } = await g.connected()
       await launch(new Wire(channel), pc, 'guest')
     } catch (e) { fail(e) }
   }
   const onOfferTyped = (text: string) => {
     setTyped(text)
-    const r = decodePairing(text)
-    if (r.ok && r.info.role === 'offer') void joinWith(text)
+    const code = extractCode(text)
+    const r = decodePairing(code)
+    if (r.ok && r.info.role === 'offer') void joinWith(code)
   }
+  const paste = async (apply: (t: string) => void) => {
+    try { apply(await navigator.clipboard.readText()) } catch { toast('Collez le code dans la zone avec un appui long (ou Ctrl+V).', 'err') }
+  }
+  // Retour sur la fenêtre : si le presse-papiers contient un code de réponse valide, on le prend automatiquement
+  const answerRef = useRef(onAnswerTyped)
+  answerRef.current = onAnswerTyped
+  useEffect(() => {
+    if (phase !== 'host-code') return
+    const onFocus = () => {
+      navigator.clipboard.readText().then((t) => {
+        const r = decodePairing(extractCode(t))
+        if (r.ok && r.info.role === 'answer') answerRef.current(t)
+      }).catch(() => undefined)
+    }
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [phase])
 
-  const typedState = typed ? decodePairing(typed) : null
+  const typedCode = extractCode(typed)
+  const typedState = typed ? decodePairing(typedCode) : null
   const typedMsg = typedState && !typedState.ok ? DECODE_MESSAGES[typedState.error] : ''
 
   const confirm = () => { decision.current?.(choice); decision.current = null; setPhase('running'); setStatus('Application…') }
@@ -156,11 +201,11 @@ export function WifiSync() {
           <p><strong>Étape 1.</strong> Sur l'autre appareil, choisissez « Rejoindre », puis scannez ce QR code (ou saisissez le code en dessous).</p>
           <div className="qr-wrap"><img src={qr} alt="QR code de connexion" width={260} height={260} /></div>
           <details><summary>Code à saisir si le scan est impossible</summary><CodeBlock code={code} /></details>
-          <p><strong>Étape 2.</strong> L'autre appareil affiche alors un <strong>code de réponse</strong>. Tapez-le ici :</p>
+          <p><strong>Étape 2.</strong> L'autre appareil affiche alors un <strong>code de réponse</strong>. Tapez-le ici, ou copiez le message reçu et cliquez sur « Coller » (le code est aussi détecté automatiquement quand vous revenez sur cette fenêtre) :</p>
           <textarea className="mono code-input" rows={3} value={typed} autoFocus placeholder="K7QP-2MXA-…" spellCheck={false} autoCapitalize="characters"
             onChange={(e) => onAnswerTyped(e.target.value)} />
-          <div className="muted small">{typed && (typedState?.ok ? (typedState.info.role === 'answer' ? 'Code valide.' : 'Ceci est le code de départ : saisissez le code de RÉPONSE affiché par l\'autre appareil.') : `${typedMsg} (${normalizeCode(typed).length} caractères saisis)`)}</div>
-          <div className="actions"><button onClick={reset}>Annuler</button></div>
+          <div className="muted small">{typed && (typedState?.ok ? (typedState.info.role === 'answer' ? 'Code valide.' : 'Ceci est le code de départ : saisissez le code de RÉPONSE affiché par l\'autre appareil.') : `${typedMsg} (${normalizeCode(typedCode).length} caractères saisis)`)}</div>
+          <div className="actions"><button className="primary" onClick={() => paste(onAnswerTyped)}>Coller le code</button><button onClick={reset}>Annuler</button></div>
         </>
       )}
 
@@ -177,10 +222,11 @@ export function WifiSync() {
               <p>Saisissez le code affiché sur l'autre appareil (sous le QR code, « Code à saisir »).</p>
               <textarea className="mono code-input" rows={3} value={typed} autoFocus placeholder="K7QP-2MXA-…" spellCheck={false} autoCapitalize="characters"
                 onChange={(e) => onOfferTyped(e.target.value)} />
-              <div className="muted small">{typed && (typedState?.ok ? (typedState.info.role === 'offer' ? 'Code valide.' : 'Ceci est un code de réponse : saisissez le code de DÉPART.') : `${typedMsg} (${normalizeCode(typed).length} caractères saisis)`)}</div>
+              <div className="muted small">{typed && (typedState?.ok ? (typedState.info.role === 'offer' ? 'Code valide.' : 'Ceci est un code de réponse : saisissez le code de DÉPART.') : `${typedMsg} (${normalizeCode(typedCode).length} caractères saisis)`)}</div>
             </>
           )}
           <div className="actions">
+            {!scan && <button className="primary" onClick={() => paste(onOfferTyped)}>Coller le code</button>}
             {scan && <button onClick={() => { releaseCam.current?.(); setScan(false) }}>Saisir le code à la main</button>}
             <button onClick={reset}>Annuler</button>
           </div>
@@ -189,9 +235,10 @@ export function WifiSync() {
 
       {phase === 'guest-code' && (
         <>
-          <p><strong>Code de réponse :</strong> tapez-le sur l'autre appareil (zone « Étape 2 »). La connexion démarre dès qu'il est correctement saisi.</p>
+          <p><strong>Code de réponse :</strong> envoyez-le à l'autre appareil (zone « Étape 2 ») : copiez-le puis collez-le dans une messagerie, ou tapez-le. La connexion démarre dès qu'il est correctement reçu.</p>
+          <CodeActions code={code} />
           <CodeBlock code={code} />
-          <p className="muted">En attente de l'autre appareil… (30 s maximum après la saisie)</p>
+          {(() => { void tick; const left = Math.max(0, Math.round((deadline - Date.now()) / 1000)); return <p className="muted">{left > 0 ? `En attente de l'autre appareil… il reste ${Math.floor(left / 60)} min ${String(left % 60).padStart(2, '0')} s.` : 'Délai dépassé : recommencez.'}</p> })()}
           <div className="actions"><button onClick={reset}>Annuler</button></div>
         </>
       )}

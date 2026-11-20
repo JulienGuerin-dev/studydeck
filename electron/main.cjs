@@ -41,7 +41,7 @@ function createWindow() {
   win.once('ready-to-show', () => win.show())
   win.loadURL('app://local/index.html')
   win.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https?:/i.test(url)) shell.openExternal(url)
+    if (/^(https?|mailto):/i.test(url)) shell.openExternal(url)
     return { action: 'deny' }
   })
   win.webContents.on('will-navigate', (e, url) => {

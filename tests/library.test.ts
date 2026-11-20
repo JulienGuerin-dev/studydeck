@@ -8,7 +8,7 @@ import {
 import { checkIntegrity, repairIntegrity } from '../src/domain/integrity'
 import { answerCard, cardsInScope, dueCardsInScope, endSession, startSession } from '../src/review/service'
 import { buildStats } from '../src/stats/stats'
-import { DAY } from '../src/review/sm2'
+import { DAY, startOfDay } from '../src/review/levels'
 
 async function buildTree() {
   const maths = await createFolder('Mathématiques', null)
@@ -98,18 +98,18 @@ describe('Révision, planification et statistiques', () => {
       const id = s.logic.current()!.cardId
       await answerCard(s, script[id].shift()!)
     }
-    const rec = (await endSession(s))!
+    const { session: rec } = await endSession(s)
     expect(rec).toMatchObject({ selected: 3, attempts: 4, correct: 3, incorrect: 1 })
-    expect(rec.endedAt).not.toBeNull()
+    expect(rec!.endedAt).not.toBeNull()
     expect(await db.events.count()).toBe(4)
-    expect(await db.events.where('kind' as never).equals('retry').count().catch(() => 1)).toBeGreaterThanOrEqual(0)
+    expect((await db.events.toArray()).filter((e) => e.kind === 'retry').length).toBe(1)
 
-    const sc1 = (await db.scheduling.get(t.c1.id))!
-    expect(sc1.interval).toBe(1)
-    const sc2 = (await db.scheduling.get(t.c2.id))! // premier essai faux : la retry ne compte pas pour SM-2
-    expect(sc2.reps).toBe(0)
-    expect(sc2.interval).toBe(1)
-    expect(sc2.ef).toBeLessThan(2.5)
+    const sc1 = (await db.scheduling.get(t.c1.id))! // réussite → étape 2, prochaine révision dans 2 jours
+    expect(sc1.level).toBe(2)
+    expect(sc1.nextReviewAt).toBe(startOfDay(Date.now()) + 2 * DAY)
+    const sc2 = (await db.scheduling.get(t.c2.id))! // premier essai faux : la reprise immédiate ne compte pas
+    expect(sc2.level).toBe(1)
+    expect(sc2.failStreak).toBe(1)
 
     const st = buildStats(await listFolders(), await listCards(), await db.events.toArray(), await db.scheduling.toArray(), Date.now())
     expect(st.global).toMatchObject({ cards: 3, reviewed: 3, attempts: 4, correct: 3 })
@@ -128,19 +128,20 @@ describe('Révision, planification et statistiques', () => {
     expect((await dueCardsInScope(null)).map((c) => c.id)).not.toContain(t.c2.id)
     expect((await dueCardsInScope(null, Date.now() + 3 * DAY)).map((c) => c.id)).toContain(t.c2.id)
   })
-  it('une carte réussie une fois n\'est pas « maîtrisée » ; 3 succès et 21 jours d\'intervalle le sont', async () => {
+  it('une carte réussie une fois n\'est pas « maîtrisée » ; les 6 étapes réussies la terminent', async () => {
     const t = await buildTree()
     const base = Date.now() - 100 * DAY
-    let at = base
-    for (let i = 0; i < 5; i++) {
-      await db.events.add({ id: `e${i}`, cardId: t.c1.id, deviceId: 'd', sessionId: 's', at, correct: true, kind: 'first', mode: 'due' })
-      at += (i === 0 ? 1 : i === 1 ? 6 : 15 * i) * DAY
+    for (const [i, d] of [0, 2, 6, 13, 27, 57].entries()) {
+      await db.events.add({ id: `e${i}`, cardId: t.c1.id, deviceId: 'd', sessionId: 's', at: base + d * DAY, correct: true, kind: 'first', mode: 'due' })
     }
     const { recomputeScheduling } = await import('../src/review/scheduling')
     await recomputeScheduling([t.c1.id])
     const st = buildStats(await listFolders(), await listCards(), await db.events.toArray(), await db.scheduling.toArray(), Date.now())
     expect(st.cards.get(t.c1.id)!.mastered).toBe(true)
+    expect(st.cards.get(t.c1.id)!.graduated).toBe(true)
+    expect(st.cards.get(t.c1.id)!.due).toBe(false)
     expect(st.cards.get(t.c2.id)!.mastered).toBe(false)
+    expect(st.byFolder.get(t.analyse.id)!.mastered).toBe(1)
   })
   it('marque une carte comme « en difficulté » sous 60 % après 3 tentatives', async () => {
     const t = await buildTree()

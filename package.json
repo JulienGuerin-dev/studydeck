@@ -1,7 +1,7 @@
 {
   "name": "studydeck",
   "productName": "StudyDeck",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Flashcards personnelles avec répétition espacée (hors ligne, sans cloud)",
   "author": "StudyDeck",
   "private": true,

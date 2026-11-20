@@ -9,7 +9,7 @@ Voir `docs/GUIDE_INSTALLATION.md` (PC), `docs/GUIDE_IPHONE_GITHUB.md` (iPhone), 
 ## Développer
 ```
 npm install
-npm test            # 62 tests automatisés
+npm test            # 83 tests automatisés
 npm run dev         # interface seule dans le navigateur
 npm start           # build + application Electron
 npm run dist        # paquet Windows (zip) dans release/

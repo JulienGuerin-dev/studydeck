@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
+import { LEVELS, levelName } from '../review/levels'
 import { FolderSelect } from './store'
 
 type Req =
+  | { kind: 'level'; title: string; message: string; initial: number; okLabel: string; resolve: (v: number | null) => void }
   | { kind: 'confirm'; title: string; message: string; okLabel: string; danger: boolean; resolve: (v: boolean) => void }
   | { kind: 'prompt'; title: string; label: string; initial: string; okLabel: string; resolve: (v: string | null) => void }
   | { kind: 'folder'; title: string; rootLabel?: string; exclude?: string; initial: string | null; okLabel: string; resolve: (v: { id: string | null } | null) => void }
@@ -18,6 +20,10 @@ export const promptAsk = (o: { title: string; label?: string; initial?: string; 
 /** Retourne { id } (id = null pour la racine) ou null si annulé. */
 export const folderAsk = (o: { title: string; rootLabel?: string; exclude?: string; initial?: string | null; okLabel?: string }) =>
   new Promise<{ id: string | null } | null>((resolve) => push?.({ kind: 'folder', title: o.title, rootLabel: o.rootLabel, exclude: o.exclude, initial: o.initial ?? null, okLabel: o.okLabel ?? 'Choisir', resolve }))
+
+/** Choix d'une étape d'apprentissage (1 à 6) ; null si annulé. */
+export const levelAsk = (o: { title: string; message?: string; initial?: number; okLabel?: string }) =>
+  new Promise<number | null>((resolve) => push?.({ kind: 'level', title: o.title, message: o.message ?? '', initial: o.initial ?? 1, okLabel: o.okLabel ?? 'Valider', resolve }))
 
 export const toast = (message: string, kind: 'ok' | 'err' = 'ok') => toastPush?.(message, kind)
 
@@ -45,6 +51,7 @@ export function DialogHost() {
   const [toasts, setToasts] = useState<{ id: number; m: string; kind: 'ok' | 'err' }[]>([])
   const [text, setText] = useState('')
   const [folder, setFolder] = useState<string | null>(null)
+  const [level, setLevel] = useState(1)
   const idRef = useRef(0)
 
   useEffect(() => {
@@ -62,6 +69,7 @@ export function DialogHost() {
     if (!cur) return
     if (cur.kind === 'prompt') setText(cur.initial)
     if (cur.kind === 'folder') setFolder(cur.initial)
+    if (cur.kind === 'level') setLevel(cur.initial)
   }, [cur])
   const done = () => setQueue((q) => q.slice(1))
 
@@ -85,6 +93,20 @@ export function DialogHost() {
           <label className="field"><span>{cur.label}</span>
             <input autoFocus value={text} onChange={(e) => setText(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter' && text.trim()) { cur.resolve(text.trim()); done() } }} />
+          </label>
+        </Modal>
+      )}
+      {cur?.kind === 'level' && (
+        <Modal title={cur.title} onClose={() => { cur.resolve(null); done() }}
+          footer={<>
+            <button onClick={() => { cur.resolve(null); done() }}>Annuler</button>
+            <button className="primary" onClick={() => { cur.resolve(level); done() }}>{cur.okLabel}</button>
+          </>}>
+          {cur.message && <p className="pre">{cur.message}</p>}
+          <label className="field"><span>Étape d'apprentissage</span>
+            <select value={level} onChange={(e) => setLevel(Number(e.target.value))}>
+              {Array.from({ length: LEVELS }, (_, i) => i + 1).map((l) => <option key={l} value={l}>{levelName(l)}</option>)}
+            </select>
           </label>
         </Modal>
       )}

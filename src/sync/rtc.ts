@@ -4,7 +4,7 @@
 import { decodePairing, encodePairing, infoFromSdp, sdpFromInfo, type DecodeError } from './pairing'
 import type { Channel } from './wire'
 
-const CONNECT_TIMEOUT = 30_000
+const CONNECT_TIMEOUT = 180_000 // 3 minutes : le temps de transférer le code de réponse vers l'autre appareil
 
 function waitGathering(pc: RTCPeerConnection, maxMs = 4000): Promise<void> {
   return new Promise((resolve) => {

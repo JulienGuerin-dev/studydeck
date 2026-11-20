@@ -48,3 +48,16 @@ Nouveaux : codec d'appairage (7 : aller-retour, mDNS, tolérance de saisie, dét
 4. PC connecté au partage de connexion : PC « Afficher le code » (action : Tester la connexion) → iPhone « Scanner » → taper le code de réponse sur le PC → message « Connexion réussie ».
 5. Refaire avec « Synchroniser » après avoir créé une carte sur chaque appareil ; provoquer un conflit (modifier la même carte des deux côtés).
 6. Sauvegarde iPhone (partage → Fichiers) puis restauration.
+
+---
+# Mise à jour v1.2
+
+## Tests automatisés : 83 / 83
+Nouveaux : algorithme par étapes (12 : 6 étapes et délais, échec, deux échecs consécutifs, pardon d'un échec isolé, retard non pénalisé, révision anticipée, reprises ignorées, étape manuelle, annulation, ordre des événements indifférent, carte terminée), session (undo multiple, cartes sans notation, suppression), types de matières (loisir, archive automatique, choix de l'étape, correction manuelle), statistiques par étape, synchronisation du type/emoji/étape, refus d'une version différente, **migration des données SM-2**, copier/coller du code d'appairage.
+
+## Application réelle (Electron)
+Retour arrière (même carte, réponse affichée), édition en pleine session (carte mise à jour sans quitter), badge d'étape, tableau des étapes, passage en Loisir (créature « sereine », plus aucune carte due), emoji, vue détaillée d'une matière : aucune erreur console.
+Connexion WebRTC avec **75 s** entre la réponse de l'invité et sa saisie sur l'hôte : établie sans problème (Chromium).
+
+## Non vérifié sur le matériel
+Safari iOS réel (délai de connexion, copier/partager, animations des créatures, batterie), ouverture du brouillon d'e-mail sous Windows.

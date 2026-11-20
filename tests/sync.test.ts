@@ -169,9 +169,9 @@ describe('Synchronisation bidirectionnelle', () => {
     const evCount = async (d: StudyDB) => as(d, () => db.events.count())
     expect(await evCount(pc)).toBe(3)
     expect(await evCount(phone)).toBe(3)
-    const sched = async (d: StudyDB) => as(d, async () => { const s = (await db.scheduling.get(card.id))!; return [s.reps, s.interval, s.firstCount, s.ef] })
+    const sched = async (d: StudyDB) => as(d, async () => { const s = (await db.scheduling.get(card.id))!; return [s.level, s.failStreak, s.reviews] })
     expect(await sched(pc)).toEqual(await sched(phone)) // même calendrier sur les deux appareils
-    expect((await sched(pc))[2]).toBe(2) // 2 « first » (un par appareil), la retry ne compte pas
+    expect(await sched(pc)).toEqual([2, 0, 1]) // la réussite du PC fait monter ; la réponse de l'iPhone, non due, ne change rien
     expect(await as(pc, () => db.sessions.count())).toBe(2)
   })
 

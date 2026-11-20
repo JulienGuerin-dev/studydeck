@@ -15,6 +15,8 @@ import { makeZip, readZip, strFromU8 } from '../exchange/zip'
 import { recomputeScheduling } from '../review/scheduling'
 
 export const SYNC_FORMAT = 'studysync'
+/** Version du modèle de données : les deux appareils doivent être à la même version pour se synchroniser. */
+export const SYNC_SCHEMA = 2
 export const ABSENT = 'absent'
 
 export type Entity = Folder | Card
@@ -23,6 +25,7 @@ export interface EntityRec { kind: EntityKind; id: string; hash: string; data: E
 export interface SyncPackage {
   format: typeof SYNC_FORMAT
   version: 1
+  schema: number
   createdAt: number
   device: { id: string; name: string }
   entities: EntityRec[]
@@ -43,6 +46,15 @@ export async function entityHash(kind: EntityKind, e: Entity): Promise<string> {
   const payload = kind === 'card'
     ? ['card', (e as Card).folderId, (e as Card).front, (e as Card).back, deleted]
     : ['folder', (e as Folder).parentId, (e as Folder).name, deleted]
+  if (kind === 'folder') {
+    const f = e as Folder
+    // « learning » et absence de type sont équivalents ; les champs vides n'entrent pas dans l'empreinte
+    const extra: Record<string, string> = {}
+    if (f.kind && f.kind !== 'learning') extra.k = f.kind
+    if (f.emoji) extra.e = f.emoji
+    if (f.color) extra.c = f.color
+    if (Object.keys(extra).length) payload.push(extra as never)
+  }
   return sha256Hex(JSON.stringify(payload))
 }
 
@@ -84,7 +96,7 @@ export async function exportSyncFile(): Promise<{ bytes: Uint8Array; name: strin
     ;(basesOut[b.peerId] ??= {})[k] = b.hash
   }
   const pkg: SyncPackage = {
-    format: SYNC_FORMAT, version: 1, createdAt: now(), device, entities, bases: basesOut,
+    format: SYNC_FORMAT, version: 1, schema: SYNC_SCHEMA, createdAt: now(), device, entities, bases: basesOut,
     events, sessions, blobs: blobs.map((b) => ({ hash: b.hash, mime: b.mime })),
   }
   const json = JSON.stringify(pkg)
@@ -115,6 +127,7 @@ export async function readSyncFile(bytes: Uint8Array): Promise<{ ok: boolean; er
   if ((await sha256Hex(z['sync.json'])) !== manifest.sha256) {
     return { ok: false, errors: ['Le fichier est corrompu (somme de contrôle invalide). Générez-le à nouveau.'] }
   }
+  if (pkg.schema !== SYNC_SCHEMA) return { ok: false, errors: ['L\'autre appareil utilise une version différente de StudyDeck. Mettez à jour les deux appareils (PC et iPhone) avant de synchroniser.'] }
   const self = await deviceId()
   if (pkg.device.id === self) return { ok: false, errors: ['Ce fichier a été créé par cet appareil : importez celui de l\'autre appareil.'] }
   const media = new Map<string, Uint8Array>()
